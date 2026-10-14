@@ -1,0 +1,77 @@
+version: 2
+
+models:
+  - name: gold_accuracy_by_lead
+    description: >
+      Hourly accuracy per model, variable and lead day 1 to 7 (location_id 'ALL' or one location).
+      mae = typical size of the miss, bias = average signed error (positive = forecast too high),
+      rmse = penalises large misses. Paired: all models scored on identical hours.
+    data_tests:
+      - unique_combination:
+          arguments: {columns: [model, variable, lead_day, location_id]}
+    columns:
+      - name: mae
+        data_tests: [not_null, {accepted_range: {arguments: {min_value: 0, max_value: 50}}}]
+      - name: n_hours
+        data_tests: [{accepted_range: {arguments: {min_value: 1, max_value: 100000000}}}]
+
+  - name: gold_daily_accuracy
+    description: >
+      Accuracy of daily max and min temperature, daily rain total and peak wind per local calendar day
+      (DST aware). Rows for all locations, per location ('ALL' = all) and per season ('all' = all seasons).
+    data_tests:
+      - unique_combination:
+          arguments: {columns: [model, metric, lead_day, location_id, season]}
+    columns:
+      - name: mae
+        data_tests: [not_null, {accepted_range: {arguments: {min_value: 0, max_value: 100}}}]
+      - name: share_within_2
+        data_tests: [{accepted_range: {arguments: {min_value: 0, max_value: 1}}}]
+
+  - name: gold_rain_skill
+    description: Rain day (>= rain_day_threshold_mm) contingency table and scores per model and lead day.
+    data_tests:
+      - unique_combination:
+          arguments: {columns: [model, lead_day, location_id]}
+    columns:
+      - name: hit_rate
+        data_tests: [{accepted_range: {arguments: {min_value: 0, max_value: 1}}}]
+      - name: false_alarm_ratio
+        data_tests: [{accepted_range: {arguments: {min_value: 0, max_value: 1}}}]
+      - name: critical_success_index
+        data_tests: [{accepted_range: {arguments: {min_value: 0, max_value: 1}}}]
+
+  - name: gold_model_comparison
+    description: Head to head per variable and lead day. rank 1 = lowest MAE. ERA5 caveat applies (README).
+    data_tests:
+      - unique_combination:
+          arguments: {columns: [model, variable, lead_day, location_id]}
+    columns:
+      - name: share_hours_closest
+        data_tests: [{accepted_range: {arguments: {min_value: 0, max_value: 1}}}]
+      - name: mae_gap_to_best
+        data_tests: [{accepted_range: {arguments: {min_value: 0, max_value: 50}}}]
+
+  - name: gold_forecast_7day
+    description: >
+      Latest 7 day outlook per location and model in local days, with expected error at that lead from
+      the location's own history. Today and the final day may be partial (see is_complete_day).
+    data_tests:
+      - unique_combination:
+          arguments: {columns: [location_id, model, local_date]}
+    columns:
+      - name: location_id
+        data_tests: [not_null, has_all_locations]
+      - name: lead_day
+        data_tests: [{accepted_range: {arguments: {min_value: 0, max_value: 7}}}]
+      - name: temperature_max
+        data_tests: [{accepted_range: {arguments: {min_value: -20, max_value: 55}}}]
+
+  - name: gold_pipeline_health
+    description: Freshness and completeness per bronze source. data_until_utc for actuals is the ERA5 watermark.
+    columns:
+      - name: source
+        data_tests: [unique, not_null]
+      - name: failed_last_7_days
+        # Operational alert, not a data defect: warn instead of failing the build.
+        data_tests: [{accepted_range: {arguments: {min_value: 0, max_value: 0}, config: {severity: warn}}}]

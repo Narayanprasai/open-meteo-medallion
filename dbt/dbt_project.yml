@@ -4,6 +4,7 @@ config-version: 2
 profile: weather
 
 model-paths: ["models"]
+seed-paths: ["seeds"]
 macro-paths: ["macros"]
 test-paths: ["tests"]
 target-path: "target"
@@ -15,6 +16,8 @@ flags:
 # Run dbt from the repository root (see README). Bronze file paths in the ingestion log are relative to it.
 vars:
   bronze_dir: "data/bronze"
+  # Daily total at or above this counts as a rain day (Bureau of Meteorology convention).
+  rain_day_threshold_mm: 1.0
 
 models:
   weather:
@@ -24,3 +27,13 @@ models:
     silver:
       +schema: silver
       +materialized: table
+    intermediate:
+      +schema: intermediate
+      +materialized: table
+    gold:
+      +schema: gold
+      +materialized: table
+
+seeds:
+  weather:
+    +schema: silver

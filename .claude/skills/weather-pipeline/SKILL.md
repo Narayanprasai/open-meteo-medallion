@@ -43,7 +43,10 @@ Models compared are configured in `config/pipeline.yaml` (ECMWF IFS 0.25° and G
    * `silver_forecast_by_lead`: location, model, valid_time_utc, lead_day
    * `silver_actuals`: location, valid_time_utc
 6. **Truth is ERA5, never a model's own day 0.** Using a model's analysis as truth biases the model comparison.
-7. **Model comparison uses an inner join** on location, valid_time_utc, lead_day so both models are scored on identical rows.
+7. **Paired scoring.** `int_hourly_errors` keeps an hour only if every model and the actual exist, so all models are scored on identical hours (test: `assert_models_scored_on_identical_hours`).
+8. **Local time only via macros** in `dbt/macros/local_time.sql` (`to_local`, `local_day_hours`, `au_season`). Never add a fixed offset.
+9. **Daily metrics use complete local days only** (23/24/25 hours). A rain day is >= `rain_day_threshold_mm` (1 mm).
+10. **Gold tables have a `location_id = 'ALL'` row** (grouping sets) next to per location rows; filter on it for national figures.
 
 ## Common tasks
 
@@ -51,6 +54,9 @@ Models compared are configured in `config/pipeline.yaml` (ECMWF IFS 0.25° and G
 1. Add an entry to `config/locations.yaml` with `id`, `name`, `state`, `latitude`, `longitude`, `timezone` (IANA). Append at the end.
 2. Rerun the backfill (see Run). Requests change, so every chunk is stored again with the new location included.
 3. Run `dbt build`; uniqueness and hour count tests must pass.
+
+### Answer "how accurate is X?"
+Start from `gold.gold_daily_accuracy` (what people read: daily max/min, rain total) or `gold.gold_accuracy_by_lead` (hourly). Filter `location_id = 'ALL'` and `season = 'all'` for headline numbers. Mention the ERA5 caveat whenever comparing models.
 
 ### Add a weather variable
 1. Add it under `scored_variables` (compared with ERA5 at every lead) or `display_variables` (live forecast only) in `config/pipeline.yaml`. Run `scripts/probe_api.py --only 6` first: a scored variable must be complete for every model, every lead day and in ERA5.

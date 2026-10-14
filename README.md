@@ -35,10 +35,10 @@ uv run pytest                                                  # offline tests
 uv run python -m weather_pipeline.ingest --source previous_runs actuals \
     --start 2025-10-01 --end 2026-10-14                        # one off backfill (about 5 to 10 minutes)
 uv run python -m weather_pipeline.ingest                       # daily incremental run
-uv run dbt build --project-dir dbt --profiles-dir dbt          # silver models and data tests
+uv run dbt build --project-dir dbt --profiles-dir dbt          # silver + gold models and 82 data tests (~1 min)
 ```
 
-Run every command from the repository root. DuckDB is capped at 2 GB (`DUCKDB_MEMORY_LIMIT=4GB uv run dbt build ...` to raise it). Gold and orchestration steps are added as they land.
+Run every command from the repository root. DuckDB is capped at 2 GB (`DUCKDB_MEMORY_LIMIT=4GB uv run dbt build ...` to raise it). Orchestration is added in the next step.
 
 ## Data model
 
@@ -49,15 +49,43 @@ Run every command from the repository root. DuckDB is capped at 2 GB (`DUCKDB_ME
 | Silver | `silver.silver_forecast_by_lead` | location, model, valid hour (UTC), lead day 1 to 7 |
 | Silver | `silver.silver_actuals` | location, valid hour (UTC), ERA5 |
 | Silver | `silver.silver_forecast_current` | location, model, valid hour (UTC), latest live forecast |
-| Silver | `silver.silver_coverage`, `silver.dim_location` | completeness report; locations with timezone |
+| Silver | `silver.silver_coverage`, `silver.dim_location`, `silver.weather_codes` | completeness report; locations with timezone; WMO code labels |
+| Intermediate | `intermediate.int_hourly_errors` | paired forecast vs actual per hour (all models scored on identical hours) |
+| Intermediate | `intermediate.int_daily_errors` | complete local days only (23, 24 or 25 hours with DST) |
+| Gold | `gold.gold_forecast_7day` | location, model, local date: outlook with expected error at that lead |
+| Gold | `gold.gold_accuracy_by_lead` | model, variable, lead day, location ('ALL' or one): MAE, bias, RMSE, growth vs day 1 |
+| Gold | `gold.gold_daily_accuracy` | model, metric (daily max/min temp, rain total, peak wind), lead day, location, season |
+| Gold | `gold.gold_rain_skill` | model, lead day, location: rain day hit rate, false alarms, CSI, frequency bias |
+| Gold | `gold.gold_model_comparison` | variable, lead day, location: rank, gap to best, share of hours closest |
+| Gold | `gold.gold_pipeline_health` | per source: freshness, ERA5 watermark, failures, completeness |
 
 Silver keeps the most recent download per key, and a real value always beats a null one, so late ERA5 values fill in on later runs.
+
+## Results (backfill 1 Oct 2025 to 14 Oct 2026)
+
+| Question | Answer |
+|---|---|
+| How accurate? | Daily max temperature, all cities: ECMWF typical error 1.2 °C one day ahead (83% of days within 2 °C) |
+| Decay with lead time | ECMWF 1.2 °C at day 1 to 2.2 °C at day 7 (58% within 2 °C); GFS 1.4 °C to 2.4 °C |
+| Which model? | ECMWF has the lower error at every lead day nationally and is closer in ~60% of hours at day 1 (see ERA5 caveat) |
+| Rain | ECMWF catches 86% of rain days at day 1 but slightly over forecasts rain; GFS misses more rain days as lead grows (46% caught at day 7) |
+| Local differences | Sydney daily max is forecast ~2 °C too cold and Perth ~2 °C too warm by ECMWF; in Sydney GFS is the better model |
+
+Reproduce:
+
+```bash
+uv run python -c "import duckdb; c=duckdb.connect('data/warehouse.duckdb', read_only=True); print(c.sql(\"select lead_day, model, round(mae,2) mae, round(share_within_2,2) within_2c from gold.gold_daily_accuracy where metric='temperature_max' and location_id='ALL' and season='all' order by lead_day, model\"))"
+```
 
 ## Known limitations
 
 * Truth is ERA5 reanalysis, not station observations. ERA5 is produced by ECMWF on the same 0.25° grid as `ecmwf_ifs025`, which likely favours ECMWF in the comparison.
 * Open-Meteo's ECMWF archive misses three columns for 17 to 22 April 2026 (see `silver.silver_coverage`). Those hours are excluded from scoring for both models.
 * Forecasts are for grid points nearest each city, not the exact coordinates.
+* The large Sydney (cold) and Perth (warm) biases are likely coastal grid cell effects (land and sea mixed differently in forecast and reanalysis). Not yet verified.
+* A "lead N" daily value aggregates hourly lead N forecasts, which come from model runs a few hours apart.
+* Partial local days at the edges of the data are excluded from daily scores; today and day 7 in the outlook are partial (`is_complete_day`).
+* No state level rollup: averaging e.g. Perth with Broome would be meaningless, so results are per location with a `state` column.
 
 ## Investigation before building
 

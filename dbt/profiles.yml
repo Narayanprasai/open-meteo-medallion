@@ -10,3 +10,5 @@ weather:
         # Cap memory so the build behaves the same on an 8 GB laptop; DuckDB spills to disk if needed.
         memory_limit: "{{ env_var('DUCKDB_MEMORY_LIMIT', '2GB') }}"
         preserve_insertion_order: false
+        # All naive timestamps are UTC; local time is derived explicitly with each location's IANA zone.
+        TimeZone: UTC
