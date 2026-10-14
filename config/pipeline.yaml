@@ -19,11 +19,19 @@ actuals:
   model: era5
   lookback_days: 10
 
-hourly_variables:
+# Scored variables: requested at every lead day and compared with ERA5 (all verified complete, probe section 6).
+scored_variables:
   - temperature_2m
   - precipitation
   - wind_speed_10m
   - relative_humidity_2m
+
+# Display variables: live forecast only. ECMWF has no weather_code at lead days 1..7.
+display_variables:
   - weather_code
+
+# Request pacing. One month for all locations, models and leads is ~3 MB and ~10 s (probe section 7).
+backfill_chunk: month
+pause_between_requests_seconds: 10
 
 timezone: GMT  # always UTC at ingestion; local time is derived in gold

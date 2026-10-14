@@ -14,3 +14,5 @@ Material decisions made with AI assistance. Screenshots are in `docs/screenshots
 | 8 | Model choice | Probe: BOM ACCESS Global returns no data live or archived; ICON lacks day 7; ECMWF 9 km archive starts 2026 | ECMWF IFS 0.25° vs NOAA GFS |
 | 9 | Truth leakage | Probe: archive `best_match` returned values 12 hours in the future (forecast filled) | Pin `models=era5`; accuracy watermark is ERA5 lag (~6 days) |
 | 10 | Backfill window | Both models archived from at least July 2024 | 12 months from 2025-10-01, configurable |
+| 11 | Variable coverage | Probe: all scored variables complete for both models at every lead and in ERA5; ECMWF weather_code only at day 0 | Split config into scored and display variables |
+| 12 | Request size | Probe: one month, 12 locations, 2 models, 80 columns returns in ~10 s, ~3 MB | Backfill in monthly chunks with a pause between requests |

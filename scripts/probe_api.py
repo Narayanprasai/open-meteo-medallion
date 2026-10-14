@@ -6,6 +6,8 @@ Answers:
   3. How far back does each model's archive go (is January 2024 populated)?
   4. How are response keys named when several models and locations are requested at once?
   5. How far behind today is the ERA5 archive (the truth source)?
+  6. Are all configured variables populated for every model, lead day and in ERA5?
+  7. Does one full size backfill request (all locations, models, variables, one month) succeed?
 
 Run: uv run python scripts/probe_api.py            (all sections)
      uv run python scripts/probe_api.py --only 3,5   (selected sections)
@@ -14,6 +16,7 @@ Run: uv run python scripts/probe_api.py            (all sections)
 from __future__ import annotations
 
 import argparse
+import time
 
 from datetime import date, timedelta
 from pathlib import Path
@@ -149,9 +152,79 @@ def probe_archive_lag(client: httpx.Client) -> None:
         print(f"  {model:<12} last non null: {last}; requested up to {end}")
 
 
+def probe_variable_coverage(client: httpx.Client) -> None:
+    """Every configured variable, model and lead day for Sydney over the last 7 days, plus ERA5."""
+    print("\n== 6: variable coverage for configured models (Sydney, last 7 days) ==")
+    loc = LOCATIONS["syd"]
+    variables = PIPELINE["scored_variables"]
+    leads = [0] + LEADS
+    columns = [v if d == 0 else f"{v}_previous_day{d}" for v in variables for d in leads]
+    print(f"  columns: hours, day0, {', '.join(f'd{d}' for d in LEADS)}")
+    for model in PIPELINE["models"]:
+        body = get(client, PREVIOUS_RUNS_URL, {
+            "latitude": loc["latitude"], "longitude": loc["longitude"],
+            "hourly": ",".join(columns), "models": model,
+            "past_days": 7, "forecast_days": 1, "timezone": "GMT",
+        })
+        if body is None:
+            continue
+        hourly = body["hourly"]
+        print(f"  {model}")
+        for v in variables:
+            counts = " ".join(
+                f"{non_null(hourly.get(v if d == 0 else f'{v}_previous_day{d}', [])):>3}" for d in leads
+            )
+            print(f"    {v:<22} {len(hourly['time']):>3} | {counts}")
+
+    truth = PIPELINE["actuals"]["model"]
+    end = date.today() - timedelta(days=8)
+    body = get(client, ARCHIVE_URL, {
+        "latitude": loc["latitude"], "longitude": loc["longitude"],
+        "hourly": ",".join(variables), "models": truth, "timezone": "GMT",
+        "start_date": (end - timedelta(days=6)).isoformat(), "end_date": end.isoformat(),
+    })
+    if body is not None:
+        print(f"  actuals ({truth}), 7 days ending {end}")
+        for v in variables:
+            values = body["hourly"].get(v, [])
+            print(f"    {v:<22} {non_null(values):>3} of {len(values)}")
+
+
+def probe_full_batch(client: httpx.Client) -> None:
+    """One realistic backfill request: all locations, models, variables and leads for one month."""
+    print("\n== 7: full size backfill request (all locations, models, variables, leads; 1 month) ==")
+    locs = list(LOCATIONS.values())
+    columns = [v if d == 0 else f"{v}_previous_day{d}"
+               for v in PIPELINE["scored_variables"] for d in [0] + LEADS]
+    params = {
+        "latitude": ",".join(str(l["latitude"]) for l in locs),
+        "longitude": ",".join(str(l["longitude"]) for l in locs),
+        "hourly": ",".join(columns), "models": ",".join(PIPELINE["models"]),
+        "start_date": "2026-09-01", "end_date": "2026-09-30", "timezone": "GMT",
+    }
+    url_length = len(str(httpx.Request("GET", PREVIOUS_RUNS_URL, params=params).url))
+    started = time.perf_counter()
+    try:
+        r = client.get(PREVIOUS_RUNS_URL, params=params, timeout=120)
+    except httpx.HTTPError as exc:
+        print(f"  REQUEST FAILED: {type(exc).__name__}: {exc} (url length {url_length})")
+        return
+    print(f"  status {r.status_code}, {time.perf_counter() - started:.1f}s, "
+          f"{len(r.content) / 1e6:.2f} MB, url length {url_length}")
+    if r.status_code != 200:
+        print(f"  reason: {r.text[:300]}")
+        return
+    body = r.json()
+    items = body if isinstance(body, list) else [body]
+    nulls = sum(v is None for item in items for k, vals in item["hourly"].items() if k != "time" for v in vals)
+    total = sum(len(vals) for item in items for k, vals in item["hourly"].items() if k != "time")
+    print(f"  locations returned {len(items)} of {len(locs)}, "
+          f"columns per location {len(items[0]['hourly']) - 1}, null share {nulls / total:.1%}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--only", default="1,2,3,4,5", help="comma separated sections to run, e.g. 3,5")
+    parser.add_argument("--only", default="1,2,3,4,5,6,7", help="comma separated sections to run, e.g. 3,5")
     sections = set(parser.parse_args().only.split(","))
     with httpx.Client(timeout=30) as client:
         if "1" in sections:
@@ -164,6 +237,10 @@ def main() -> None:
             probe_multi_model_keys(client, ["ecmwf_ifs025", "gfs_global"])
         if "5" in sections:
             probe_archive_lag(client)
+        if "6" in sections:
+            probe_variable_coverage(client)
+        if "7" in sections:
+            probe_full_batch(client)
 
 
 if __name__ == "__main__":
