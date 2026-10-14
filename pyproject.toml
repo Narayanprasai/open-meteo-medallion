@@ -1,0 +1,24 @@
+[project]
+name = "weather-pipeline"
+version = "0.1.0"
+description = "Local medallion pipeline on the Open-Meteo weather API for Australian locations"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "tenacity>=8.2",
+    "pyyaml>=6.0",
+    "duckdb>=1.1",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/weather_pipeline"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
