@@ -1,0 +1,17 @@
+# Pipeline configuration. Model identifiers to be verified against the API in step 2.
+models:
+  - bom_access_global
+  - ecmwf_ifs025
+
+forecast_days: 7
+lead_days: [1, 2, 3, 4, 5, 6, 7]
+backfill_start: "2024-01-01"
+
+hourly_variables:
+  - temperature_2m
+  - precipitation
+  - wind_speed_10m
+  - relative_humidity_2m
+  - weather_code
+
+timezone: GMT  # always UTC at ingestion; local time is derived in gold
