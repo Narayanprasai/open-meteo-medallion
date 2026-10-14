@@ -31,3 +31,7 @@ Material decisions made with AI assistance. Screenshots are in `docs/screenshots
 | 25 | Daily metrics | Partial local days would bias daily max/min | Keep only complete local days (23/24/25 h); rain days use the BOM 1 mm convention |
 | 26 | Unexpected finding | Sydney forecast ~2 °C too cold and Perth ~2 °C too warm, unlike other cities | Reported as a finding with a hypothesis (coastal grid cells), not explained away |
 | 27 | Failed downloads | A failed request is an operational issue, not bad data | Health check is a dbt warning, not a build failure |
+| 28 | Orchestration shape | One Dagster asset graph: bronze ingestion asset keyed to the dbt sources, all dbt models as assets, dbt tests as asset checks, grouped by layer | Accepted |
+| 29 | Path bug avoided | dagster-dbt runs dbt inside `dbt/`, which breaks relative paths | Pass absolute warehouse path and bronze dir; verified end to end through Dagster on real data (82 dbt tests passed) |
+| 30 | Partial failures | Rebuilding gold after a partly failed download would mix old and new data silently | Bronze asset fails if any request failed, so downstream does not run; details in the ingestion log |
+| 31 | Schedule default | A schedule that starts automatically on a reviewer's laptop is surprising | Ships switched off; one click to enable |

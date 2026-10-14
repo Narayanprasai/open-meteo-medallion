@@ -18,7 +18,7 @@ Forecast weather for Australian locations up to 7 days ahead, measure forecast a
 | Ingestion | Python (httpx, tenacity retries), raw JSON to `data/bronze/` |
 | Storage and compute | DuckDB, single file `data/warehouse.duckdb` |
 | Transformation and tests | dbt (dbt-duckdb) in `dbt/` |
-| Orchestration | Dagster in `orchestration/` |
+| Orchestration | Dagster in `src/weather_pipeline/orchestration/` |
 | Environment | uv, Python 3.12 (pinned in `.python-version`) |
 
 ## Data sources
@@ -65,7 +65,7 @@ Start from `gold.gold_daily_accuracy` (what people read: daily max/min, rain tot
 
 ## Run
 
-Run from the repository root.
+Run from the repository root. Short forms: `make setup | test | backfill | run | build | ui | forecast LOC=syd`.
 
 ```bash
 uv sync                                                       # install
@@ -78,6 +78,13 @@ uv run dbt build --project-dir dbt --profiles-dir dbt -s silver_actuals+   # one
 ```
 
 Always run from the repository root: bronze file paths in the log and the DuckDB path are relative to it.
+
+### Orchestration (Dagster)
+* `make ui` starts Dagster at http://localhost:3000. Assets are grouped bronze, staging, silver, intermediate, gold; dbt tests are asset checks.
+* `bronze/ingestion_log` and `bronze/locations` are produced by the `bronze_ingestion` asset and are the dbt sources, which links the graph. Keep those keys if you rename anything.
+* dagster-dbt runs dbt inside `dbt/`, so `definitions.py` passes absolute `WAREHOUSE_PATH` and `bronze_dir`. Never rely on relative paths there.
+* Backfill from the UI: materialize `bronze_ingestion` with config `{sources: [previous_runs, actuals], start: "YYYY-MM-DD", end: "YYYY-MM-DD"}`.
+* After changing dbt models, restart `dagster dev` (it rebuilds the manifest on start).
 
 Inspect bronze:
 

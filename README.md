@@ -27,18 +27,41 @@ Orchestrated by Dagster. Everything runs locally against a single DuckDB file.
 
 ## Run locally
 
-Requires [uv](https://docs.astral.sh/uv/). Python 3.12 is installed automatically.
+Requires [uv](https://docs.astral.sh/uv/) and `make`. Python 3.12 and every dependency are installed by `make setup`.
+
+```bash
+make setup      # install
+make test       # offline tests (26)
+make backfill   # one off: 12 months of history (5 to 10 minutes), then builds every model and runs 82 data tests
+make forecast   # 7 day outlook for Sydney; make forecast LOC=per for Perth (ids in config/locations.yaml)
+make run        # daily refresh through Dagster: new forecast + recent actuals, then all models and tests
+make ui         # Dagster UI at http://localhost:3000: lineage graph, run history, daily 07:30 schedule
+```
+
+Without make, the same steps are:
 
 ```bash
 uv sync
-uv run pytest                                                  # offline tests
-uv run python -m weather_pipeline.ingest --source previous_runs actuals \
-    --start 2025-10-01 --end 2026-10-14                        # one off backfill (about 5 to 10 minutes)
-uv run python -m weather_pipeline.ingest                       # daily incremental run
-uv run dbt build --project-dir dbt --profiles-dir dbt          # silver + gold models and 82 data tests (~1 min)
+uv run python -m weather_pipeline.ingest --source previous_runs actuals --start 2025-10-01 --end 2026-10-14
+uv run python -m weather_pipeline.ingest                       # daily incremental ingestion
+uv run dbt build --project-dir dbt --profiles-dir dbt          # all models and data tests
+DAGSTER_HOME=$PWD/.dagster uv run dagster dev                  # orchestration UI
 ```
 
-Run every command from the repository root. DuckDB is capped at 2 GB (`DUCKDB_MEMORY_LIMIT=4GB uv run dbt build ...` to raise it). Orchestration is added in the next step.
+Run every command from the repository root. DuckDB is capped at 2 GB (`DUCKDB_MEMORY_LIMIT=4GB` to raise it).
+
+## Orchestration
+
+Dagster (`src/weather_pipeline/orchestration/`) runs the pipeline as one asset graph, grouped by layer:
+
+```
+bronze  ->  staging  ->  silver  ->  intermediate  ->  gold
+```
+
+* `bronze_ingestion` calls the Python ingester and records stored, duplicate, skipped and failed counts. If any request fails, the asset fails and downstream models are not rebuilt on partial data.
+* Every dbt model is an asset and every dbt test is an asset check on it (59 checks).
+* `daily_refresh` job: incremental ingestion then `dbt build`. Its schedule (07:30 Australia/Sydney) ships switched off; turn it on in the UI.
+* Backfills: launch `bronze_ingestion` from the UI Launchpad with config, e.g. `sources: [previous_runs, actuals]`, `start: "2025-10-01"`.
 
 ## Data model
 
@@ -95,9 +118,8 @@ uv run python -c "import duckdb; c=duckdb.connect('data/warehouse.duckdb', read_
 
 ```
 config/          locations and pipeline settings
-src/             ingestion code
+src/             ingestion (weather_pipeline/ingest) and Dagster (weather_pipeline/orchestration)
 dbt/             silver and gold models, tests
-orchestration/   Dagster definitions
 data/            local bronze files and DuckDB warehouse (gitignored)
 docs/            design notes and AI usage evidence
 .claude/skills/  knowledge transfer skill for engineers and AI agents
