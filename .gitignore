@@ -24,3 +24,6 @@ orchestration/.tmp_dagster_home*/
 .env
 .claude/settings.local.json
 .DS_Store
+
+# Local probe output
+probe_output.txt
