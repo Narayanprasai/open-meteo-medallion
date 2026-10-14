@@ -16,3 +16,7 @@ Material decisions made with AI assistance. Screenshots are in `docs/screenshots
 | 10 | Backfill window | Both models archived from at least July 2024 | 12 months from 2025-10-01, configurable |
 | 11 | Variable coverage | Probe: all scored variables complete for both models at every lead and in ERA5; ECMWF weather_code only at day 0 | Split config into scored and display variables |
 | 12 | Request size | Probe: one month, 12 locations, 2 models, 80 columns returns in ~10 s, ~3 MB | Backfill in monthly chunks with a pause between requests |
+| 13 | Bronze dedup bug | A test showed two different months with identical data were marked duplicate, pointing at the wrong file | Dedupe on request hash plus payload hash; regression test added |
+| 14 | Volatile field | Every response has `generationtime_ms`, which changes per call, so a raw byte hash never matches | Payload hash ignores volatile fields |
+| 15 | Real backfill failure | API returned HTTP 200 with an empty body for August 2026; the run crashed | Treat a non JSON 200 as transient and retry; validate one item per location; any unexpected error is logged per request and the run continues |
+| 16 | Cheap reruns | After a failure, rerunning refetched every month | Skip closed windows already stored after they settled; windows stored while ERA5 was still filling in are fetched again |

@@ -27,7 +27,21 @@ Orchestrated by Dagster. Everything runs locally against a single DuckDB file.
 
 ## Run locally
 
-Instructions added as each step lands.
+Requires [uv](https://docs.astral.sh/uv/). Python 3.12 is installed automatically.
+
+```bash
+uv sync
+uv run pytest                                                  # offline tests
+uv run python -m weather_pipeline.ingest --source previous_runs actuals \
+    --start 2025-10-01 --end 2026-10-14                        # one off backfill (about 5 to 10 minutes)
+uv run python -m weather_pipeline.ingest                       # daily incremental run
+```
+
+Silver, gold and orchestration steps are added as they land.
+
+## Investigation before building
+
+`scripts/probe_api.py` tested every assumption against the live API before any pipeline code was written: which models have forecasts for lead days 1 to 7 over Australia, how far back each archive goes, which variables are complete, which truth source is honest, and whether one full size request succeeds. Findings and decisions are in `docs/ai_log.md`. Rerun it before adding a model or variable.
 
 ## Repository layout
 

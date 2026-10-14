@@ -19,7 +19,7 @@ Forecast weather for Australian locations up to 7 days ahead, measure forecast a
 | Storage and compute | DuckDB, single file `data/warehouse.duckdb` |
 | Transformation and tests | dbt (dbt-duckdb) in `dbt/` |
 | Orchestration | Dagster in `orchestration/` |
-| Environment | uv, Python 3.11+ |
+| Environment | uv, Python 3.12 (pinned in `.python-version`) |
 
 ## Data sources
 
@@ -27,16 +27,17 @@ Forecast weather for Australian locations up to 7 days ahead, measure forecast a
 |---|---|
 | Live 7 day forecast | Forecast API |
 | Forecast at fixed lead days 1 to 7 | Previous Runs API (`<var>_previous_dayN`) |
-| Actuals (truth) | Historical Weather API (ERA5), lags a few days |
+| Actuals (truth) | Historical Weather API with `models=era5`, lags about 6 days |
 
-Models compared are configured in `config/pipeline.yaml`. Never use "best match": it can change model across lead days and contaminates accuracy curves.
+Models compared are configured in `config/pipeline.yaml` (ECMWF IFS 0.25° and GFS). Never use "best match": it can change model across lead days and contaminates accuracy curves. `scripts/probe_api.py` verifies any model or variable before it goes into config; rerun it before adding one.
 
 ## Non negotiable conventions
 
 1. **UTC in bronze and silver.** Request `timezone=GMT`. Convert to local time only in gold, using the IANA tz from `config/locations.yaml`. Never store a fixed UTC offset.
 2. **Local days are 23, 24 or 25 hours** (DST start and end). Daily aggregates are built in dbt from hourly UTC data, never from the API's daily endpoint.
 3. **Precipitation is accumulated over the preceding hour.** The value at 10:00 covers 09:00 to 10:00.
-4. **Bronze is append only.** One file per API request plus a metadata row. `payload_hash` (sha256 of body) makes reruns idempotent: identical payloads are skipped.
+4. **Bronze is append only.** One raw file per API request plus a row in `bronze.ingestion_log` (also for failures). A response is skipped as `duplicate` only when the same request (`request_hash`) returned the same data (`payload_hash`, which ignores the volatile `generationtime_ms`).
+4a. **Batched responses are lists in request order.** The response has no location id; `location_ids` in the log row gives the order. Column names are `<variable>[_previous_dayN]_<model>`; match the model suffix against the configured list, never split on `_`.
 5. **Business dedup happens in silver**, never in bronze. Keep the latest ingestion per grain:
    * `silver_forecast_current`: location, model, valid_time_utc
    * `silver_forecast_by_lead`: location, model, valid_time_utc, lead_day
@@ -47,18 +48,34 @@ Models compared are configured in `config/pipeline.yaml`. Never use "best match"
 ## Common tasks
 
 ### Add a location
-1. Add an entry to `config/locations.yaml` with `id`, `name`, `state`, `latitude`, `longitude`, `timezone` (IANA).
-2. Run a backfill for that location only (see Run).
+1. Add an entry to `config/locations.yaml` with `id`, `name`, `state`, `latitude`, `longitude`, `timezone` (IANA). Append at the end.
+2. Rerun the backfill (see Run). Requests change, so every chunk is stored again with the new location included.
 3. Run `dbt build`; uniqueness and hour count tests must pass.
 
 ### Add a weather variable
-1. Add it under `hourly_variables` in `config/pipeline.yaml`. Check it exists in the Previous Runs API if accuracy is needed.
+1. Add it under `scored_variables` (compared with ERA5 at every lead) or `display_variables` (live forecast only) in `config/pipeline.yaml`. Run `scripts/probe_api.py --only 6` first: a scored variable must be complete for every model, every lead day and in ERA5.
 2. Rerun ingestion; bronze keeps the raw payload so nothing else changes there.
 3. Add the column to the silver models and an accepted range test.
 
 ## Run
 
-Commands are filled in as each step lands. See `README.md`.
+Run from the repository root.
+
+```bash
+uv sync                                                       # install
+uv run pytest                                                 # tests, no network needed
+uv run python -m weather_pipeline.ingest                      # incremental: forecast + last 10 days
+uv run python -m weather_pipeline.ingest --source previous_runs actuals \
+    --start 2025-10-01 --end 2026-10-14                       # backfill, monthly chunks
+```
+
+Inspect bronze:
+
+```bash
+uv run python -c "import duckdb; print(duckdb.connect('data/warehouse.duckdb').sql('select source, status, count(*) from bronze.ingestion_log group by all order by all'))"
+```
+
+A failed request is logged with the API's reason and the run exits non zero; other requests continue. Rerunning is always safe and cheap: closed windows already stored after they settled are skipped, so only failed or still changing windows are fetched.
 
 ## Gotchas
 
@@ -66,3 +83,8 @@ Commands are filled in as each step lands. See `README.md`.
 * Broken Hill is in NSW but uses SA time: timezone belongs to the location, not the state.
 * Returned grid coordinates differ from requested ones; store both.
 * Lead days beyond a model's horizon are null, not zero.
+* BOM ACCESS Global returns no data for Australian points, live or archived. ICON has no day 7.
+* Archive `best_match` fills recent days with forecasts (values appear in the future). Always pin `models=era5`.
+* ECMWF has `weather_code` only at day 0, which is why it is a display variable.
+* Large requests count as many calls against the free tier; backfills pause between monthly chunks.
+* The API can return HTTP 200 with an empty body on large requests. The client retries it; every stored file is checked for one item per location.
