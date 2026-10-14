@@ -1,0 +1,12 @@
+weather:
+  target: local
+  outputs:
+    local:
+      type: duckdb
+      # Relative to the repository root, where dbt is run from. Override with WAREHOUSE_PATH.
+      path: "{{ env_var('WAREHOUSE_PATH', 'data/warehouse.duckdb') }}"
+      threads: 4
+      settings:
+        # Cap memory so the build behaves the same on an 8 GB laptop; DuckDB spills to disk if needed.
+        memory_limit: "{{ env_var('DUCKDB_MEMORY_LIMIT', '2GB') }}"
+        preserve_insertion_order: false

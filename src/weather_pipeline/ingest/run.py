@@ -60,6 +60,7 @@ def run_ingestion(settings: Settings, sources: list[str], start: date | None = N
     client = client or OpenMeteoClient()
     store = store or BronzeStore(settings.root, settings.bronze_dir, settings.warehouse_path)
     entries: list[LogEntry] = []
+    store.sync_locations(settings.locations)
     closed_before = utc_today() - timedelta(days=settings.actuals_lookback_days)
 
     specs = [spec for source in sources for spec in build_requests(settings, source, start, end)]

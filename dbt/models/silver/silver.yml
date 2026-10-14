@@ -1,0 +1,95 @@
+version: 2
+
+# Plausible physical ranges for Australian locations. A value outside them means a parsing or unit bug.
+x-ranges:
+  temperature: &temperature {min_value: -20, max_value: 55}
+  precipitation: &precipitation {min_value: 0, max_value: 300}
+  wind: &wind {min_value: 0, max_value: 250}
+  humidity: &humidity {min_value: 0, max_value: 100}
+
+models:
+  - name: dim_location
+    description: Configured locations with IANA timezone, used to convert UTC to local time in gold.
+    columns:
+      - name: location_id
+        data_tests: [unique, not_null]
+      - name: timezone
+        data_tests: [not_null]
+
+  - name: silver_forecast_by_lead
+    description: Forecast made lead_day days before each valid hour. Grain is location, model, valid_time_utc, lead_day.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [location_id, model, valid_time_utc, lead_day]
+    columns:
+      - name: location_id
+        data_tests:
+          - not_null
+          - has_all_locations
+          - relationships: {arguments: {to: ref('dim_location'), field: location_id}}
+      - name: model
+        data_tests:
+          - not_null
+          - accepted_values: {arguments: {values: [ecmwf_ifs025, gfs_global]}}
+      - name: lead_day
+        data_tests:
+          - not_null
+          - accepted_values: {arguments: {values: [1, 2, 3, 4, 5, 6, 7], quote: false}}
+      - name: valid_time_utc
+        data_tests: [not_null]
+      - name: temperature_2m
+        data_tests: [{accepted_range: {arguments: *temperature}}]
+      - name: precipitation
+        data_tests: [{accepted_range: {arguments: *precipitation}}]
+      - name: wind_speed_10m
+        data_tests: [{accepted_range: {arguments: *wind}}]
+      - name: relative_humidity_2m
+        data_tests: [{accepted_range: {arguments: *humidity}}]
+
+  - name: silver_actuals
+    description: ERA5 truth per location and valid hour (UTC). Recent hours are null until ERA5 publishes them.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [location_id, valid_time_utc]
+    columns:
+      - name: location_id
+        data_tests:
+          - not_null
+          - has_all_locations
+          - relationships: {arguments: {to: ref('dim_location'), field: location_id}}
+      - name: valid_time_utc
+        data_tests: [not_null]
+      - name: temperature_2m
+        data_tests: [{accepted_range: {arguments: *temperature}}]
+      - name: precipitation
+        data_tests: [{accepted_range: {arguments: *precipitation}}]
+      - name: wind_speed_10m
+        data_tests: [{accepted_range: {arguments: *wind}}]
+      - name: relative_humidity_2m
+        data_tests: [{accepted_range: {arguments: *humidity}}]
+
+  - name: silver_forecast_current
+    description: Latest live forecast per location, model and valid hour (UTC), including weather_code for display.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [location_id, model, valid_time_utc]
+    columns:
+      - name: location_id
+        data_tests:
+          - not_null
+          - has_all_locations
+          - relationships: {arguments: {to: ref('dim_location'), field: location_id}}
+      - name: temperature_2m
+        data_tests: [{accepted_range: {arguments: *temperature}}]
+      - name: weather_code
+        data_tests: [{accepted_range: {arguments: {min_value: 0, max_value: 99}}}]
+
+  - name: silver_coverage
+    description: Completeness per source, model, lead day and variable. Gaps here are upstream archive gaps.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [source, model, lead_day, variable]

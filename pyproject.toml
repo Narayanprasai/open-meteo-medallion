@@ -2,12 +2,14 @@
 name = "weather-pipeline"
 version = "0.1.0"
 description = "Local medallion pipeline on the Open-Meteo weather API for Australian locations"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "httpx>=0.27",
     "tenacity>=8.2",
     "pyyaml>=6.0",
     "duckdb>=1.1",
+    "dbt-core>=1.10,<1.11",
+    "dbt-duckdb>=1.10,<1.11",
 ]
 
 [dependency-groups]

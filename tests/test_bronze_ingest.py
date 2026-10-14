@@ -276,3 +276,13 @@ def test_window_stored_while_open_is_fetched_again(settings, monkeypatch):
     monkeypatch.setattr(run_module, "utc_today", lambda: date(2026, 11, 20))  # long closed now
     second = run()
     assert second.skipped == 0 and calls["n"] == 2
+
+
+def test_locations_are_synced_from_config(settings):
+    run_ingestion(settings, ["forecast"], client=make_client(lambda r: httpx.Response(200, json=fake_body(r))),
+                  store=BronzeStore(settings.root, settings.bronze_dir, settings.warehouse_path))
+    with duckdb.connect(str(settings.warehouse_path)) as con:
+        rows = con.execute("select location_id, timezone from bronze.locations order by sort_order").fetchall()
+    assert rows[0] == ("syd", "Australia/Sydney")
+    assert ("bhq", "Australia/Broken_Hill") in rows
+    assert len(rows) == len(settings.locations)

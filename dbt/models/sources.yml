@@ -1,0 +1,22 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: Written by the Python ingester (src/weather_pipeline/ingest). Raw files live in data/bronze/.
+    schema: bronze
+    tables:
+      - name: ingestion_log
+        description: One row per API request, including failures and duplicates.
+        columns:
+          - name: request_id
+            data_tests: [unique, not_null]
+          - name: status
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: [stored, duplicate, failed]
+      - name: locations
+        description: Mirror of config/locations.yaml, refreshed on every ingestion run.
+        columns:
+          - name: location_id
+            data_tests: [unique, not_null]

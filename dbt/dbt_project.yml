@@ -1,0 +1,26 @@
+name: weather
+version: "1.0.0"
+config-version: 2
+profile: weather
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+flags:
+  send_anonymous_usage_stats: false
+
+# Run dbt from the repository root (see README). Bronze file paths in the ingestion log are relative to it.
+vars:
+  bronze_dir: "data/bronze"
+
+models:
+  weather:
+    staging:
+      +schema: staging
+      +materialized: view
+    silver:
+      +schema: silver
+      +materialized: table

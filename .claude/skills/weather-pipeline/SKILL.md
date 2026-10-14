@@ -55,7 +55,7 @@ Models compared are configured in `config/pipeline.yaml` (ECMWF IFS 0.25° and G
 ### Add a weather variable
 1. Add it under `scored_variables` (compared with ERA5 at every lead) or `display_variables` (live forecast only) in `config/pipeline.yaml`. Run `scripts/probe_api.py --only 6` first: a scored variable must be complete for every model, every lead day and in ERA5.
 2. Rerun ingestion; bronze keeps the raw payload so nothing else changes there.
-3. Add the column to the silver models and an accepted range test.
+3. Add a `max(value) filter (where variable = '...')` column to the relevant silver models and an `accepted_range` test in `dbt/models/silver/silver.yml`. Staging needs no change: it unpacks every field generically.
 
 ## Run
 
@@ -67,7 +67,11 @@ uv run pytest                                                 # tests, no networ
 uv run python -m weather_pipeline.ingest                      # incremental: forecast + last 10 days
 uv run python -m weather_pipeline.ingest --source previous_runs actuals \
     --start 2025-10-01 --end 2026-10-14                       # backfill, monthly chunks
+uv run dbt build --project-dir dbt --profiles-dir dbt         # staging + silver + data tests
+uv run dbt build --project-dir dbt --profiles-dir dbt -s silver_actuals+   # one model and downstream
 ```
+
+Always run from the repository root: bronze file paths in the log and the DuckDB path are relative to it.
 
 Inspect bronze:
 
@@ -87,4 +91,8 @@ A failed request is logged with the API's reason and the run exits non zero; oth
 * Archive `best_match` fills recent days with forecasts (values appear in the future). Always pin `models=era5`.
 * ECMWF has `weather_code` only at day 0, which is why it is a display variable.
 * Large requests count as many calls against the free tier; backfills pause between monthly chunks.
+* ERA5 is ECMWF's own reanalysis on the ECMWF grid: state this caveat whenever the model comparison is shown.
+* ECMWF archive gap 17 to 22 April 2026 (3 columns). Check `silver.silver_coverage` after any backfill.
+* dbt tests use local generic tests in `dbt/tests/generic/`; no `dbt deps` or network needed.
+* DuckDB memory is capped at 2 GB in `dbt/profiles.yml` (`DUCKDB_MEMORY_LIMIT` to change). Unpack bronze as typed columns plus UNPIVOT, never by extracting JSON per field: that ran out of memory on an 8 GB laptop.
 * The API can return HTTP 200 with an empty body on large requests. The client retries it; every stored file is checked for one item per location.

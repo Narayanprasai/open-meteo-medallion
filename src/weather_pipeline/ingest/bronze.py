@@ -46,6 +46,16 @@ create table if not exists bronze.ingestion_log (
     error           varchar,
     ingested_at_utc timestamp not null
 );
+create table if not exists bronze.locations (
+    location_id varchar primary key,
+    name        varchar not null,
+    state       varchar not null,
+    latitude    double not null,
+    longitude   double not null,
+    timezone    varchar not null,
+    sort_order  integer not null,
+    synced_at_utc timestamp not null
+);
 """
 
 
@@ -119,6 +129,16 @@ class BronzeStore:
              http_status, digest, file_path, size, error, now.replace(tzinfo=None)],
         )
         return LogEntry(request_id, status, digest, file_path, error)
+
+    def sync_locations(self, locations) -> None:
+        """Mirror config/locations.yaml so dbt reads cities from the same source of truth."""
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        self.con.execute("delete from bronze.locations")
+        self.con.executemany(
+            "insert into bronze.locations values (?, ?, ?, ?, ?, ?, ?, ?)",
+            [[loc.id, loc.name, loc.state, loc.latitude, loc.longitude, loc.timezone, i, now]
+             for i, loc in enumerate(locations, start=1)],
+        )
 
     def is_stored_after(self, spec: RequestSpec, stored_on_or_after: date) -> bool:
         """True when this exact request was stored on or after the given date.
