@@ -1,11 +1,23 @@
-# Pipeline configuration. Model identifiers to be verified against the API in step 2.
+# Pipeline configuration. Choices below were verified with scripts/probe_api.py (see docs/ai_log.md).
+
+# Forecast models to ingest and compare. Both archive d1..d7 for Australia from at least July 2024.
+# Excluded: bom_access_global (no data, live or archived), icon_global (no day 7),
+#           ecmwf_ifs 9 km (archive only from early 2026).
 models:
-  - bom_access_global
   - ecmwf_ifs025
+  - gfs_global
 
 forecast_days: 7
 lead_days: [1, 2, 3, 4, 5, 6, 7]
-backfill_start: "2024-01-01"
+
+# Backfill window for Previous Runs and actuals. One full year covers every season and both DST changes.
+backfill_start: "2025-10-01"
+
+# Truth source. Must be pinned: the archive's default model fills recent days with forecasts.
+# Pure ERA5 lags about 6 days; recent days are re-fetched every run so late values fill in.
+actuals:
+  model: era5
+  lookback_days: 10
 
 hourly_variables:
   - temperature_2m
