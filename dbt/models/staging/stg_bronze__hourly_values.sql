@@ -47,7 +47,7 @@ with_model as (
     select
         *,
         coalesce(
-            -- longest configured model name that the field ends with
+            -- configured model whose name the field ends with (model names are not suffixes of each other)
             list_sort(list_filter(models, lambda m: ends_with(field, '_' || m)), 'DESC')[1],
             case when len(models) = 1 then models[1] end
         ) as model

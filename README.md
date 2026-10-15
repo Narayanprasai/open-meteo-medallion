@@ -73,13 +73,14 @@ This does two things:
 1. Downloads past forecasts (made 1 to 7 days ahead) and ERA5 actual weather from 1 Oct 2025 to today, one month per request, with a short pause between requests to respect the free API. Expect one `stored` line per month for each of `previous_runs` and `actuals`.
 2. Runs the daily pipeline through Dagster: the live 7 day forecast, then every dbt model and data test. Expect `Done. PASS=82` from dbt and `RUN_SUCCESS` from Dagster.
 
-To backfill a different period: `make backfill BACKFILL_START=2025-01-01`. Interrupted or failed? Run the same command again: months already downloaded are skipped, only missing ones are fetched.
+To backfill a different period, set `backfill_start` in `config/pipeline.yaml` (the earliest date the pipeline will fetch; earlier start dates are raised to it) and run `make backfill BACKFILL_START=<same date>`. Interrupted or failed? Run the same command again: months already downloaded are skipped, only missing ones are fetched.
 
 ### 4. Look at the results
 
 ```bash
 make forecast              # Sydney
 make forecast LOC=per      # Perth; location ids are in config/locations.yaml
+uv run python scripts/check_results.py   # headline results plus a cross check of gold against silver
 ```
 
 Example output (columns trimmed):
@@ -190,6 +191,7 @@ Two kinds of tests:
 
 * **Python tests** (`tests/`, `make test`): run the ingester and Dagster setup against a fake API. Examples: a busy server is retried, a bad request is not, a second run stores no duplicate, a failed month does not stop the others.
 * **Data tests** (`dbt/`, run by every `dbt build`): SQL checks on the tables. Examples: no duplicate rows, every location present, temperatures within −20 to 55 °C, Sydney has a 23 hour day on 5 Oct 2025, both models scored on the same hours.
+* **Results check** (`scripts/check_results.py`, read only): prints the headline gold tables, then recomputes hourly MAE and one daily maximum straight from silver with separate SQL and confirms gold matches.
 
 ---
 
