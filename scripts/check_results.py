@@ -101,7 +101,8 @@ b1_ok = all(row[-1] for row in b1.fetchall())
 b2 = con.sql("""
     with loc as (select timezone from silver.dim_location where location_id = $loc),
     hours as (
-        select timezone(l.timezone, f.valid_time_utc::timestamptz)::date as local_date,
+        -- same UTC to local conversion as the pipeline's to_local macro (independent of the session time zone)
+        select timezone(l.timezone, timezone('UTC', f.valid_time_utc))::date as local_date,
                f.temperature_2m as fc, a.temperature_2m as ac
         from silver.silver_forecast_by_lead f
         join silver.silver_actuals a using (location_id, valid_time_utc)
