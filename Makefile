@@ -14,7 +14,7 @@ setup:      ## install Python 3.12 and all dependencies
 test:       ## offline Python tests
 	uv run pytest -q
 
-backfill:   ## one off: 12 months of past forecasts and ERA5 actuals (5 to 10 minutes), then build all models
+backfill:   ## one off: 12 months of past forecasts and ERA5 actuals (10 to 15 minutes), then build all models
 	uv run python -m weather_pipeline.ingest --source previous_runs actuals --start $(BACKFILL_START) --end $(BACKFILL_END)
 	$(MAKE) run
 

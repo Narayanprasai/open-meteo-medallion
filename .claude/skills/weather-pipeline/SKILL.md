@@ -38,7 +38,7 @@ Models compared are configured in `config/pipeline.yaml` (ECMWF IFS 0.25° and G
 3. **Precipitation is accumulated over the preceding hour.** The value at 10:00 covers 09:00 to 10:00.
 4. **Bronze is append only.** One raw file per API request plus a row in `bronze.ingestion_log` (also for failures). A response is skipped as `duplicate` only when the same request (`request_hash`) returned the same data (`payload_hash`, which ignores the volatile `generationtime_ms`).
 4a. **Batched responses are lists in request order.** The response has no location id; `location_ids` in the log row gives the order. Column names are `<variable>[_previous_dayN]_<model>`; match the model suffix against the configured list, never split on `_`.
-5. **Business dedup happens in silver**, never in bronze. Keep the latest ingestion per grain:
+5. **Business dedup happens in silver**, never in bronze. Per grain, keep the most recent download, except that a real value always beats a null one (so late ERA5 values fill in and a later empty response never erases data). Macro: `latest_value_per_key`. Grains:
    * `silver_forecast_current`: location, model, valid_time_utc
    * `silver_forecast_by_lead`: location, model, valid_time_utc, lead_day
    * `silver_actuals`: location, valid_time_utc
@@ -60,7 +60,7 @@ Start from `gold.gold_daily_accuracy` (what people read: daily max/min, rain tot
 
 ### Add a weather variable
 1. Add it under `scored_variables` (compared with ERA5 at every lead) or `display_variables` (live forecast only) in `config/pipeline.yaml`. Run `scripts/probe_api.py --only 6` first: a scored variable must be complete for every model, every lead day and in ERA5.
-2. Rerun ingestion; bronze keeps the raw payload so nothing else changes there.
+2. Rerun the backfill (`make backfill`): the request changes, so every month is fetched again with the new variable. Bronze code needs no change.
 3. Add a `max(value) filter (where variable = '...')` column to the relevant silver models and an `accepted_range` test in `dbt/models/silver/silver.yml`. Staging needs no change: it unpacks every field generically.
 
 ## Run
@@ -72,8 +72,8 @@ uv sync                                                       # install
 uv run pytest                                                 # tests, no network needed
 uv run python -m weather_pipeline.ingest                      # incremental: forecast + last 10 days
 uv run python -m weather_pipeline.ingest --source previous_runs actuals \
-    --start 2025-10-01 --end 2026-10-14                       # backfill, monthly chunks
-uv run dbt build --project-dir dbt --profiles-dir dbt         # staging + silver + data tests
+    --start 2025-10-01                                        # backfill, monthly chunks; --end defaults to today
+uv run dbt build --project-dir dbt --profiles-dir dbt         # staging, silver, intermediate, gold + 82 data tests
 uv run dbt build --project-dir dbt --profiles-dir dbt -s silver_actuals+   # one model and downstream
 ```
 
@@ -98,7 +98,7 @@ A failed request is logged with the API's reason and the run exits non zero; oth
 
 * Australian zones: WA +8, NT +9:30, SA +9:30/+10:30, QLD +10, NSW/VIC/ACT/TAS +10/+11. QLD, WA, NT have no DST.
 * Broken Hill is in NSW but uses SA time: timezone belongs to the location, not the state.
-* Returned grid coordinates differ from requested ones; store both.
+* The API answers for the nearest model grid point, not the exact coordinates. Grid lat/lon/elevation are kept only in the raw bronze files.
 * Lead days beyond a model's horizon are null, not zero.
 * BOM ACCESS Global returns no data for Australian points, live or archived. ICON has no day 7.
 * Archive `best_match` fills recent days with forecasts (values appear in the future). Always pin `models=era5`.
